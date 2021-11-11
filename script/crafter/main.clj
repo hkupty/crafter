@@ -17,21 +17,30 @@
 ;; TODO cleanup old files
 ;; TODO allow for immutable fs and snapshot based install
 
+(defn create-dir [& parts]
+  (let [path (apply fs/path parts)]
+    (when-not (fs/exists? path)
+      (fs/create-dir path))))
+
 (defn get-config-dir
   ([]
-   (fs/path
+   (let [config-dir (fs/path
      (or
        (System/getenv "XDG_CONFIG_DIR")
        (fs/path (System/getenv "HOME") ".config"))
-     "crafter"))
+     "crafter")]
+     (create-dir config-dir)
+     config-dir))
   ([target] (fs/path (get-config-dir) target)))
 
 (defn get-cache-dir
-  ([] (fs/path
+  ([] (let [cache-dir (fs/path
         (or
           (System/getenv "XDG_CACHE_DIR")
           (fs/path (System/getenv "HOME") ".cache"))
-        "crafter"))
+        "crafter")]
+        (create-dir cache-dir)
+        cache-dir))
   ([target] (fs/path (get-cache-dir) target)))
 
 (defn aur-request! [target]
@@ -44,20 +53,21 @@
                    (str "arg[]=" (name target))])))
       true))
 
+
 (defn aur-handler [target]
-  (let [target-dir (get-cache-dir (name target))]
-    (when-not (fs/exists? target-dir)
-    (fs/create-dir target-dir))
-    (let [target-version (first (:results (aur-request! target)))]
+  (let [package-cache-dir (get-cache-dir (name target))]
+    (create-dir package-cache-dir)
+    (let [target-version (first (:results (aur-request! target)))
+          target-path (fs/path package-cache-dir (-> target-version :Version))
+          file-path (str (fs/path target-path (last (str/split (:URLPath target-version) #"/"))))]
+      (println file-path)
 
-      ))
-  )
-
-(def builders
-  {:pacman "" #_(fn [target] (shell/sh "pacman" "-Sy" (name target)))})
+      (create-dir target-path)
+      (spit file-path
+            (:body (curl/get (str "https://aur.archlinux.org" (:URLPath target-version))))))))
 
 (defn read-deps! []
   (fs/list-dir (get-config-dir "pkgs")))
 
 (defn -main []
-  (aur-request! :neovim-git))
+  (aur-handler :neovim-git))
